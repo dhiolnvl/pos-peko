@@ -1,0 +1,81 @@
+{
+  "expo": {
+    "name": "PEKO Petshop",
+    "slug": "qasio-peko",
+    "version": "1.8.0",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "scheme": "pawkasir",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F0F7F9"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pekopetshop.pawkasir",
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Digunakan untuk scan barcode produk saat stock opname."
+      }
+    },
+    "android": {
+      "package": "com.pekopetshop.pawkasir",
+      "versionCode": 18,
+      "icon": "./assets/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      "./plugins/withBluetoothPermissions",
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Digunakan untuk scan barcode produk saat stock opname."
+        }
+      ],
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": true
+        }
+      ]
+    ],
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/88c6c149-ace4-43b4-b3b1-74659c1a06d4"
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "88c6c149-ace4-43b4-b3b1-74659c1a06d4"
+      }
+    },
+    "owner": "wahidevcom"
+  }
+}
