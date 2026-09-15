@@ -265,6 +265,15 @@ export default function CashierScreen() {
       const pct = s?.tax_percentage ?? 0;
       posStore.setTaxRate(pct / 100);
     });
+    supabase.from('settings').select('value').eq('key', 'tax_percentage').maybeSingle().then(({ data }) => {
+      if (data?.value !== undefined) {
+        const pct = parseFloat(data.value) || 0;
+        posStore.setTaxRate(pct / 100);
+        mmkv.getObject<any>(KEY_STORE_SETTINGS).then((s) => {
+          mmkv.setObject(KEY_STORE_SETTINGS, { ...(s ?? {}), tax_percentage: pct });
+        });
+      }
+    }).catch(() => {});
   }, [currentBranch?.id]);
 
   const initShift = async () => {

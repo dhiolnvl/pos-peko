@@ -19,7 +19,7 @@ interface StoreSettings {
 
 const DEFAULTS: StoreSettings = {
   store_name: 'QasioPeko', address: '', phone: '',
-  tax_percentage: 11, receipt_footer: 'Terima kasih atas kunjungan Anda!',
+  tax_percentage: 0, receipt_footer: 'Terima kasih atas kunjungan Anda!',
 };
 
 export default function ReceiptScreen() {
@@ -30,7 +30,7 @@ export default function ReceiptScreen() {
 
   useEffect(() => {
     mmkv.getObject<StoreSettings>(KEY).then((saved) => {
-      if (saved) setSettings(saved);
+      if (saved) setSettings({ ...DEFAULTS, ...saved });
       setLoading(false);
     });
   }, []);
@@ -38,7 +38,9 @@ export default function ReceiptScreen() {
   const save = async () => {
     setSaving(true);
     try {
-      await mmkv.setObject(KEY, settings);
+      const existing = (await mmkv.getObject<StoreSettings>(KEY)) ?? DEFAULTS;
+      const updated = { ...existing, receipt_footer: settings.receipt_footer };
+      await mmkv.setObject(KEY, updated);
       await supabase.from('settings').upsert(
         { key: 'receipt_footer', value: settings.receipt_footer },
         { onConflict: 'key' }

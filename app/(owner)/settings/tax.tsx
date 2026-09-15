@@ -19,21 +19,24 @@ interface StoreSettings {
 
 const DEFAULTS: StoreSettings = {
   store_name: 'QasioPeko', address: '', phone: '',
-  tax_percentage: 11, receipt_footer: 'Terima kasih atas kunjungan Anda!',
+  tax_percentage: 0, receipt_footer: 'Terima kasih atas kunjungan Anda!',
 };
 
 export default function TaxScreen() {
   const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState<StoreSettings>(DEFAULTS);
-  const [taxEnabled, setTaxEnabled] = useState(true);
+  const [taxEnabled, setTaxEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     mmkv.getObject<StoreSettings>(KEY).then((saved) => {
       if (saved) {
-        setSettings(saved);
-        setTaxEnabled(saved.tax_percentage > 0);
+        const merged = { ...DEFAULTS, ...saved };
+        setSettings(merged);
+        setTaxEnabled(merged.tax_percentage > 0);
+      } else {
+        setTaxEnabled(false);
       }
       setLoading(false);
     });
@@ -47,9 +50,12 @@ export default function TaxScreen() {
   const save = async () => {
     setSaving(true);
     try {
-      await mmkv.setObject(KEY, settings);
+      const existing = (await mmkv.getObject<StoreSettings>(KEY)) ?? DEFAULTS;
+      const finalTax = taxEnabled ? settings.tax_percentage : 0;
+      const updated = { ...existing, tax_percentage: finalTax };
+      await mmkv.setObject(KEY, updated);
       await supabase.from('settings').upsert(
-        { key: 'tax_percentage', value: String(settings.tax_percentage) },
+        { key: 'tax_percentage', value: String(finalTax) },
         { onConflict: 'key' }
       );
       Alert.alert('Tersimpan', 'Pengaturan pajak berhasil disimpan.', [

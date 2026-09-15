@@ -21,8 +21,8 @@ interface StoreSettings {
 }
 
 const DEFAULTS: StoreSettings = {
-  store_name: 'QasioPeko', address: '', phone: '',
-  tax_percentage: 11, receipt_footer: 'Terima kasih atas kunjungan Anda!',
+  store_name: 'Peko Petshop', address: '', phone: '',
+  tax_percentage: 0, receipt_footer: 'Terima kasih atas kunjungan Anda!',
 };
 
 export default function StoreInfoScreen() {
@@ -33,7 +33,7 @@ export default function StoreInfoScreen() {
 
   useEffect(() => {
     mmkv.getObject<StoreSettings>(KEY).then((saved) => {
-      if (saved) setSettings(saved);
+      if (saved) setSettings({ ...DEFAULTS, ...saved });
       setLoading(false);
     });
   }, []);
@@ -44,7 +44,9 @@ export default function StoreInfoScreen() {
   const save = async () => {
     setSaving(true);
     try {
-      await mmkv.setObject(KEY, settings);
+      const existing = (await mmkv.getObject<StoreSettings>(KEY)) ?? DEFAULTS;
+      const updated = { ...existing, store_name: settings.store_name, address: settings.address, phone: settings.phone };
+      await mmkv.setObject(KEY, updated);
       for (const k of ['store_name', 'address', 'phone'] as const) {
         await supabase.from('settings').upsert({ key: k, value: settings[k] }, { onConflict: 'key' });
       }
