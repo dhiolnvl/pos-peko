@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "PEKO Petshop",
-    "slug": "qasio-peko",
+    "slug": "pos-peko",
     "version": "1.8.0",
     "orientation": "default",
     "userInterfaceStyle": "light",
@@ -65,7 +65,7 @@
     ],
     "runtimeVersion": "1.0.0",
     "updates": {
-      "url": "https://u.expo.dev/88c6c149-ace4-43b4-b3b1-74659c1a06d4"
+      "url": "https://u.expo.dev/7f47e4a8-119d-4ee3-9863-f8ec49772989"
     },
     "experiments": {
       "typedRoutes": true
@@ -73,9 +73,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "88c6c149-ace4-43b4-b3b1-74659c1a06d4"
+        "projectId": "7f47e4a8-119d-4ee3-9863-f8ec49772989"
       }
     },
-    "owner": "wahidevcom"
+    "owner": "dhiolnvl"
   }
 }

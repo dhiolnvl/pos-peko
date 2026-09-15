@@ -97,6 +97,18 @@ export const useAuthStore = create<AuthState>((rawSet, get) => {
         const cachedUser = await offlineCache.getUser();
         const cachedBranch = await offlineCache.getBranch();
         if (cachedUser && cachedBranch) {
+          if (cachedUser.role !== "owner" && cachedBranch.is_active === false) {
+            await offlineCache.clearSession();
+            set({
+              user: null,
+              session: null,
+              currentBranch: null,
+              isInitialized: true,
+              isLoading: false,
+              error: "Cabang ini sedang nonaktif. Hubungi pemilik toko",
+            });
+            return true;
+          }
           // Gunakan session yang sudah ada di store jika ada (bisa di-set oleh listener SIGNED_IN)
           // agar isAuthenticated = (!!session || isOfflineMode) && !!user tetap true
           const existingSession = useAuthStore.getState().session;
@@ -206,6 +218,23 @@ export const useAuthStore = create<AuthState>((rawSet, get) => {
           return;
         }
 
+        if (
+          userProfile.role !== "owner" &&
+          userProfile.branch &&
+          !userProfile.branch.is_active
+        ) {
+          await supabase.auth.signOut();
+          set({
+            user: null,
+            session: null,
+            currentBranch: null,
+            isInitialized: true,
+            isLoading: false,
+            error: "Cabang ini sedang nonaktif. Hubungi pemilik toko",
+          });
+          return;
+        }
+
         let currentBranch: Branch | null = null;
 
         if (userProfile.role === "owner") {
@@ -264,6 +293,15 @@ export const useAuthStore = create<AuthState>((rawSet, get) => {
         if (!userProfile.is_active) {
           await supabase.auth.signOut();
           throw new Error("Akun tidak aktif, hubungi pemilik toko");
+        }
+
+        if (
+          userProfile.role !== "owner" &&
+          userProfile.branch &&
+          !userProfile.branch.is_active
+        ) {
+          await supabase.auth.signOut();
+          throw new Error("Cabang ini sedang nonaktif. Hubungi pemilik toko");
         }
 
         let currentBranch: Branch | null = null;
@@ -369,6 +407,15 @@ export const useAuthStore = create<AuthState>((rawSet, get) => {
 
         const userProfile = await getUserProfile(user.id);
         if (!userProfile.is_active) {
+          await get().logout();
+          return;
+        }
+
+        if (
+          userProfile.role !== "owner" &&
+          userProfile.branch &&
+          !userProfile.branch.is_active
+        ) {
           await get().logout();
           return;
         }
