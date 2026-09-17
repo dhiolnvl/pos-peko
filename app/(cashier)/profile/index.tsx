@@ -16,7 +16,7 @@ import { CashierHeader } from '@/components/CashierHeader';
 import { APP_ENV } from '@/constants/config';
 import { TabletCenteredView } from '@/components/TabletCenteredView';
 
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.12.0';
 
 const ENV_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   production:  { label: 'Production',  color: '#16A34A', bg: '#DCFCE7' },
@@ -43,6 +43,15 @@ const TYPE_CONFIG = {
 };
 
 const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '1.12.0',
+    date: '17 September 2026',
+    items: [
+      { type: 'new', text: 'Custom Filter Tanggal: pilih rentang tanggal bebas (Dari - Sampai) via modal kalender di seluruh menu laporan' },
+      { type: 'new', text: 'Export PDF Pengeluaran & Distribusi: fitur ekspor dokumen PDF resmi lengkap dengan rincian per cabang' },
+      { type: 'improve', text: 'Header PDF & Judul Laporan: informasi periode kini lebih detail dan presisi' },
+    ],
+  },
   {
     version: '1.10.0',
     date: '26 Juni 2026',

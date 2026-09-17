@@ -10,6 +10,16 @@ interface Release { version: string; date: string; items: ChangeItem[]; }
 
 const CHANGELOG: Release[] = [
   {
+    version: '1.12.0',
+    date: '17 September 2026',
+    items: [
+      { type: 'new', text: '[Laporan] Custom Filter Tanggal: pilih rentang tanggal bebas (Dari - Sampai) via modal kalender pada Laporan Penjualan, Laporan Per Produk, Laporan Presensi, Laporan Pengeluaran, dan Laporan Distribusi' },
+      { type: 'new', text: '[Laporan] Export PDF Pengeluaran & Distribusi: fitur ekspor dokumen PDF resmi lengkap dengan logo toko, rincian per cabang, dan statistik ringkasan' },
+      { type: 'improve', text: '[Laporan] Header PDF & Judul Laporan: informasi periode kini lebih detail dan presisi (contoh: "Periode: September 2026", "Periode: 12 Jan 2026 - 17 Sep 2026", "Periode: Hari Ini (17 Sep 2026)")' },
+      { type: 'improve', text: '[Laporan] Export PDF untuk Owner & Staff Pusat: penyelarasan fitur cetak/ekspor PDF pada seluruh jenis laporan untuk role Owner dan Staff Pusat' },
+    ],
+  },
+  {
     version: '1.11.0',
     date: '30 Juni 2026',
     items: [

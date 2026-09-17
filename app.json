@@ -2,7 +2,7 @@
   "expo": {
     "name": "PEKO Petshop",
     "slug": "pos-peko",
-    "version": "1.8.0",
+    "version": "1.12.0",
     "orientation": "default",
     "userInterfaceStyle": "light",
     "scheme": "pawkasir",
@@ -25,7 +25,7 @@
     },
     "android": {
       "package": "com.pekopetshop.pawkasir",
-      "versionCode": 18,
+      "versionCode": 20,
       "icon": "./assets/icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
