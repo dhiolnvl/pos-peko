@@ -35,11 +35,13 @@ function ProductPickerModal({
   useEffect(() => {
     if (!visible) return;
     setSearch('');
-    supabase
-      .from('products')
-      .select('id, name')
-      .eq('is_active', true)
-      .order('name', { ascending: true })
+    Promise.resolve(
+      supabase
+        .from('products')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name', { ascending: true })
+    )
       .then(({ data }) => setProducts(data ?? []))
       .catch(() => {});
   }, [visible]);

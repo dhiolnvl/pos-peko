@@ -12,26 +12,33 @@ import * as Sharing from 'expo-sharing';
 import { OwnerPageHeader } from '@/components/OwnerHeader';
 import {
   getProductSalesReport, buildProductSalesPdfHtml, type ProductSalesReport,
-  fmtCurrency, startOfDay, endOfDay,
+  fmtCurrency, startOfDay, endOfDay, formatDetailedPeriodLabel,
 } from '@/lib/reportQueries';
 import { fetchAllBranches } from '@/lib/ownerQueries';
 import useAuthStore from '@/store/authStore';
 
-type Preset = 'today' | 'week' | 'month';
+import DatePickerModal from '@/components/DatePickerModal';
+
+type Preset = 'today' | 'week' | 'month' | 'custom';
 interface Branch { id: string; name: string; }
 
-function getRange(preset: Preset) {
+function getRange(preset: Preset, customFrom?: string, customTo?: string) {
   const today = new Date();
   if (preset === 'today') return { from: startOfDay(today), to: endOfDay(today) };
   if (preset === 'week') {
     const s = new Date(today); s.setDate(today.getDate() - 6);
     return { from: startOfDay(s), to: endOfDay(today) };
   }
-  const s = new Date(today); s.setDate(1);
-  return { from: startOfDay(s), to: endOfDay(today) };
+  if (preset === 'month') {
+    const s = new Date(today); s.setDate(1);
+    return { from: startOfDay(s), to: endOfDay(today) };
+  }
+  const fromD = customFrom ? new Date(customFrom) : today;
+  const toD = customTo ? new Date(customTo) : today;
+  return { from: startOfDay(fromD), to: endOfDay(toD) };
 }
 
-const presetLabel: Record<Preset, string> = { today: 'Hari Ini', week: '7 Hari', month: 'Bulan Ini' };
+const presetLabel: Record<Preset, string> = { today: 'Hari Ini', week: '7 Hari', month: 'Bulan Ini', custom: 'Custom' };
 
 export default function PerProductReport() {
   const insets = useSafeAreaInsets();
@@ -39,6 +46,14 @@ export default function PerProductReport() {
   const isTablet = width >= 768;
 
   const [preset, setPreset] = useState<Preset>('month');
+  const [customFrom, setCustomFrom] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customTo, setCustomTo] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [pickerTarget, setPickerTarget] = useState<'from' | 'to' | null>(null);
+
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [report, setReport] = useState<ProductSalesReport | null>(null);
@@ -53,7 +68,7 @@ export default function PerProductReport() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { from, to } = getRange(preset);
+      const { from, to } = getRange(preset, customFrom, customTo);
       const data = await getProductSalesReport(from, to, selectedBranch);
       setReport(data);
     } catch (e: any) {
@@ -61,25 +76,27 @@ export default function PerProductReport() {
     } finally {
       setLoading(false);
     }
-  }, [preset, selectedBranch]);
+  }, [preset, customFrom, customTo, selectedBranch]);
 
   useEffect(() => { load(); }, [load]);
 
   const rows = report?.rows ?? [];
   const branchName = selectedBranch ? branches.find((b) => b.id === selectedBranch)?.name ?? 'Cabang' : 'Semua Cabang';
+  const { from, to } = getRange(preset, customFrom, customTo);
 
   const handleExport = async () => {
     if (!report || rows.length === 0) return;
     setExporting(true);
     try {
+      const periodStr = formatDetailedPeriodLabel(from, to, presetLabel[preset]);
       const html = await buildProductSalesPdfHtml(report, {
-        periodLabel: presetLabel[preset],
+        periodLabel: periodStr,
         branchName,
         storeName: currentBranch?.name ?? 'Toko',
         storeAddress: currentBranch?.address,
       });
       const { uri } = await Print.printToFileAsync({ html, base64: false });
-      const fileName = `laporan-produk-${presetLabel[preset].replace(/ /g, '-')}-${branchName.replace(/ /g, '-')}.pdf`;
+      const fileName = `laporan-produk-${from.slice(0, 10)}-${to.slice(0, 10)}-${branchName.replace(/ /g, '-')}.pdf`;
 
       if (Platform.OS === 'android') {
         const perm = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(
@@ -121,7 +138,7 @@ export default function PerProductReport() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
         {/* Filter preset */}
         <View style={styles.filterRow}>
-          {(['today', 'week', 'month'] as Preset[]).map((p) => (
+          {(['today', 'week', 'month', 'custom'] as Preset[]).map((p) => (
             <TouchableOpacity
               key={p}
               style={[styles.presetBtn, preset === p && styles.presetBtnActive]}
@@ -131,6 +148,20 @@ export default function PerProductReport() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {preset === 'custom' && (
+          <View style={styles.customDateRow}>
+            <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('from')}>
+              <Ionicons name="calendar-outline" size={14} color="#347385" />
+              <Text style={styles.dateBtnText}>Dari: {customFrom}</Text>
+            </TouchableOpacity>
+            <Text style={{ color: '#9CA3AF' }}>-</Text>
+            <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('to')}>
+              <Ionicons name="calendar-outline" size={14} color="#347385" />
+              <Text style={styles.dateBtnText}>Sampai: {customTo}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Filter cabang */}
         <View style={{ height: 44, justifyContent: 'center' }}>
@@ -276,6 +307,19 @@ export default function PerProductReport() {
           </View>
         )}
       </ScrollView>
+      {pickerTarget && (
+        <DatePickerModal
+          visible={!!pickerTarget}
+          value={pickerTarget === 'from' ? customFrom : customTo}
+          title={pickerTarget === 'from' ? 'Pilih Tanggal Mulai' : 'Pilih Tanggal Akhir'}
+          onConfirm={(d) => {
+            if (pickerTarget === 'from') setCustomFrom(d);
+            else setCustomTo(d);
+            setPickerTarget(null);
+          }}
+          onCancel={() => setPickerTarget(null)}
+        />
+      )}
     </View>
   );
 }
@@ -295,6 +339,16 @@ const styles = StyleSheet.create({
   presetBtnActive: { backgroundColor: '#347385', borderColor: '#347385' },
   presetBtnText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
   presetBtnTextActive: { color: '#fff' },
+  customDateRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingBottom: 10,
+  },
+  dateBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  dateBtnText: { fontSize: 12, color: '#374151', fontWeight: '600' },
   branchRow: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
   branchChip: {
     paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16,

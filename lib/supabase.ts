@@ -37,7 +37,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'owner' | 'back_office' | 'cashier';
+  role: 'owner' | 'back_office' | 'cashier' | 'staff_pusat';
   branch_id: string | null;
   is_active: boolean;
   created_at: string;

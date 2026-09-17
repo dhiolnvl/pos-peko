@@ -276,7 +276,7 @@ export default function AdjustmentScreen() {
                 <Text style={styles.previewValue}>{selectedProduct!.stock}</Text>
               </View>
               <Ionicons
-                name={adjType === 'addition' ? 'arrow-forward' : 'arrow-forward'}
+                name="arrow-forward"
                 size={24}
                 color="#718096"
               />

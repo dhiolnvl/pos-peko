@@ -39,9 +39,12 @@ interface EmployeeSummary {
   records: AttendanceRow[];
 }
 
-type Preset = 'today' | 'week' | 'month';
+import DatePickerModal from '@/components/DatePickerModal';
+import { formatDetailedPeriodLabel } from '@/lib/reportQueries';
 
-function getRange(preset: Preset): { from: string; to: string } {
+type Preset = 'today' | 'week' | 'month' | 'custom';
+
+function getRange(preset: Preset, customFrom?: string, customTo?: string): { from: string; to: string } {
   const now = new Date();
   const pad = (n: number) => n.toString().padStart(2, '0');
   const dateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -55,8 +58,11 @@ function getRange(preset: Preset): { from: string; to: string } {
     start.setDate(now.getDate() - 6);
     return { from: dateStr(start), to: dateStr(now) };
   }
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  return { from: dateStr(start), to: dateStr(now) };
+  if (preset === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { from: dateStr(start), to: dateStr(now) };
+  }
+  return { from: customFrom ?? dateStr(now), to: customTo ?? dateStr(now) };
 }
 
 function formatTime(iso: string | null): string {
@@ -89,6 +95,14 @@ export default function AttendanceReportScreen() {
   const isTablet = width >= 768;
 
   const [preset, setPreset] = useState<Preset>('today');
+  const [customFrom, setCustomFrom] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customTo, setCustomTo] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [pickerTarget, setPickerTarget] = useState<'from' | 'to' | null>(null);
+
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,7 +114,7 @@ export default function AttendanceReportScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { from, to } = getRange(preset);
+      const { from, to } = getRange(preset, customFrom, customTo);
 
       // Load branches sekali
       if (branches.length === 0) {
@@ -169,12 +183,12 @@ export default function AttendanceReportScreen() {
     } finally {
       setLoading(false);
     }
-  }, [preset, selectedBranch]);
+  }, [preset, customFrom, customTo, selectedBranch]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const { from, to } = getRange(preset);
-  const rangeLabel = from === to ? formatDate(from) : `${formatDate(from)} – ${formatDate(to)}`;
+  const { from, to } = getRange(preset, customFrom, customTo);
+  const rangeLabel = formatDetailedPeriodLabel(from, to, preset === 'today' ? 'Hari Ini' : preset === 'week' ? '7 Hari' : preset === 'month' ? 'Bulan Ini' : 'Custom');
 
   const totalHadir = summaries.reduce((s, e) => s + e.total_hadir, 0);
   const totalKaryawan = summaries.length;
@@ -183,6 +197,7 @@ export default function AttendanceReportScreen() {
     { key: 'today', label: 'Hari Ini' },
     { key: 'week', label: '7 Hari' },
     { key: 'month', label: 'Bulan Ini' },
+    { key: 'custom', label: 'Custom' },
   ];
 
   const branchName = selectedBranch ? branches.find(b => b.id === selectedBranch)?.name ?? 'Cabang' : 'Semua Cabang';
@@ -218,7 +233,7 @@ export default function AttendanceReportScreen() {
         generatedAtLabel,
       });
       const { uri } = await Print.printToFileAsync({ html, base64: false });
-      const fileName = `laporan-presensi-${rangeLabel.replace(/[\s,–]+/g, '-')}.pdf`;
+      const fileName = `laporan-presensi-${from}-${to}.pdf`;
 
       if (Platform.OS === 'android') {
         const perm = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(
@@ -279,6 +294,20 @@ export default function AttendanceReportScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+          {preset === 'custom' && (
+            <View style={styles.customDateRow}>
+              <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('from')}>
+                <Ionicons name="calendar-outline" size={14} color="#347385" />
+                <Text style={styles.dateBtnText}>Dari: {customFrom}</Text>
+              </TouchableOpacity>
+              <Text style={{ color: '#9CA3AF' }}>-</Text>
+              <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('to')}>
+                <Ionicons name="calendar-outline" size={14} color="#347385" />
+                <Text style={styles.dateBtnText}>Sampai: {customTo}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Filter cabang */}
           {branches.length > 1 && (
@@ -443,6 +472,17 @@ const styles = StyleSheet.create({
   presetBtnActive: { backgroundColor: '#347385', borderColor: '#347385' },
   presetText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
   presetTextActive: { color: '#fff' },
+
+  customDateRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingVertical: 8,
+  },
+  dateBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  dateBtnText: { fontSize: 12, color: '#374151', fontWeight: '600' },
 
   branchFilterWrap: { height: 48, justifyContent: 'center', marginBottom: 4 },
   branchChip: {

@@ -9,27 +9,37 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Dimensions, FlatList, Modal, useWindowDimensions,
+  ActivityIndicator, Dimensions, FlatList, Modal, useWindowDimensions, Alert, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Print from 'expo-print';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import {
   getBranchSummaries, fetchAllBranches, fmtCurrency,
   startOfDay, endOfDay, type BranchSummary,
 } from '@/lib/ownerQueries';
-import { getSalesReport, type SalesReportResult } from '@/lib/reportQueries';
+import {
+  getSalesReport, buildSalesConsolidatedPdfHtml, formatDetailedPeriodLabel,
+  type SalesReportResult,
+} from '@/lib/reportQueries';
 import { TabletCenteredView } from '@/components/TabletCenteredView';
 import { OwnerPageHeader } from '@/components/OwnerHeader';
+import DatePickerModal from '@/components/DatePickerModal';
+import { mmkv, StorageKeys } from '@/lib/mmkvStorage';
+import { APP_NAME } from '@/constants/config';
+import type { Branch } from '@/types';
 
 const { width: SW } = Dimensions.get('window');
 const BRANCH_COLORS = ['#347385', '#56B2C1', '#22C55E', '#F59E0B', '#06B6D4', '#EF4444'];
 
 // ─── Preset periods ────────────────────────────────────────────────────────────
 
-type Preset = 'today' | 'week' | 'month';
+type Preset = 'today' | 'week' | 'month' | 'custom';
 
-function getRange(preset: Preset) {
+function getRange(preset: Preset, customFrom?: string, customTo?: string) {
   const today = new Date();
   if (preset === 'today') {
     return { from: startOfDay(today), to: endOfDay(today) };
@@ -39,9 +49,14 @@ function getRange(preset: Preset) {
     start.setDate(today.getDate() - 6);
     return { from: startOfDay(start), to: endOfDay(today) };
   }
-  const start = new Date(today);
-  start.setDate(1);
-  return { from: startOfDay(start), to: endOfDay(today) };
+  if (preset === 'month') {
+    const start = new Date(today);
+    start.setDate(1);
+    return { from: startOfDay(start), to: endOfDay(today) };
+  }
+  const fromD = customFrom ? new Date(customFrom) : today;
+  const toD = customTo ? new Date(customTo) : today;
+  return { from: startOfDay(fromD), to: endOfDay(toD) };
 }
 
 // ─── Simple bar chart ──────────────────────────────────────────────────────────
@@ -105,7 +120,7 @@ function DrilldownModal({
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View style={ddStyles.container}>
-        <OwnerPageHeader title={branchName} onClose={onClose} />
+        <OwnerPageHeader title={branchName} onBack={onClose} />
 
         {loading ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -156,17 +171,24 @@ function DrilldownModal({
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
-interface Branch { id: string; name: string; is_active: boolean }
-
 export default function StaffPusatSalesReport() {
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
   const [preset, setPreset] = useState<Preset>('today');
+  const [customFrom, setCustomFrom] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customTo, setCustomTo] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [pickerTarget, setPickerTarget] = useState<'from' | 'to' | null>(null);
+
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<BranchSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [drilldown, setDrilldown] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
@@ -177,7 +199,7 @@ export default function StaffPusatSalesReport() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { from, to } = getRange(preset);
+    const { from, to } = getRange(preset, customFrom, customTo);
     const bIds = selectedBranchId ? [selectedBranchId] : null;
     try {
       const data = await getBranchSummaries(bIds, from, to);
@@ -187,11 +209,11 @@ export default function StaffPusatSalesReport() {
     } finally {
       setLoading(false);
     }
-  }, [preset, selectedBranchId]);
+  }, [preset, customFrom, customTo, selectedBranchId]);
 
   useEffect(() => { load(); }, [load]);
 
-  const { from, to } = getRange(preset);
+  const { from, to } = getRange(preset, customFrom, customTo);
   const totalRevenue = summaries.reduce((s, b) => s + b.total_revenue, 0);
   const totalTx = summaries.reduce((s, b) => s + b.transaction_count, 0);
   const totalGP = summaries.reduce((s, b) => s + b.gross_profit, 0);
@@ -202,6 +224,49 @@ export default function StaffPusatSalesReport() {
     color: BRANCH_COLORS[i % BRANCH_COLORS.length],
   }));
 
+  const handleExportPdf = async () => {
+    if (summaries.length === 0) {
+      Alert.alert('Perhatian', 'Tidak ada data untuk diekspor');
+      return;
+    }
+    setExportingPdf(true);
+    try {
+      const periodStr = formatDetailedPeriodLabel(from, to);
+      const storeInfo = (await mmkv.getObject<any>(StorageKeys.STORE_SETTINGS)) ?? {};
+      const html = await buildSalesConsolidatedPdfHtml(
+        summaries,
+        { revenue: totalRevenue, transactions: totalTx, grossProfit: totalGP },
+        {
+          periodLabel: periodStr,
+          storeName: storeInfo.store_name || storeInfo.name || APP_NAME,
+          storeAddress: storeInfo.address,
+          branchName: selectedBranchId ? branches.find((b) => b.id === selectedBranchId)?.name : 'Semua Cabang',
+        },
+      );
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const fileName = `laporan-penjualan-${from.slice(0, 10)}-${to.slice(0, 10)}.pdf`;
+
+      if (Platform.OS === 'android') {
+        const perm = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (perm.granted) {
+          const dest = await FileSystem.StorageAccessFramework.createFileAsync(perm.directoryUri, fileName, 'application/pdf');
+          const content = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+          await FileSystem.writeAsStringAsync(dest, content, { encoding: FileSystem.EncodingType.Base64 });
+          Alert.alert('Berhasil', `PDF tersimpan:\n${fileName}`);
+        } else {
+          await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Simpan PDF' });
+        }
+      } else {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Simpan PDF' });
+      }
+    } catch (e: any) {
+      Alert.alert('Gagal', e.message || 'Tidak dapat mengekspor PDF');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <OwnerPageHeader title="Laporan Penjualan" onBack={() => router.back()} />
@@ -210,7 +275,7 @@ export default function StaffPusatSalesReport() {
         <TabletCenteredView>
           {/* Preset filter */}
           <View style={styles.filterRow}>
-            {(['today', 'week', 'month'] as Preset[]).map((p) => (
+            {(['today', 'week', 'month', 'custom'] as Preset[]).map((p) => (
               <TouchableOpacity
                 key={p}
                 style={[styles.chip, preset === p && styles.chipActive]}
@@ -334,6 +399,20 @@ export default function StaffPusatSalesReport() {
           onClose={() => setDrilldown(null)}
         />
       )}
+
+      {pickerTarget && (
+        <DatePickerModal
+          visible={!!pickerTarget}
+          value={pickerTarget === 'from' ? customFrom : customTo}
+          title={pickerTarget === 'from' ? 'Pilih Tanggal Mulai' : 'Pilih Tanggal Akhir'}
+          onConfirm={(d) => {
+            if (pickerTarget === 'from') setCustomFrom(d);
+            else setCustomTo(d);
+            setPickerTarget(null);
+          }}
+          onCancel={() => setPickerTarget(null)}
+        />
+      )}
     </View>
   );
 }
@@ -343,13 +422,30 @@ const styles = StyleSheet.create({
 
   filterRow: {
     flexDirection: 'row', gap: 8, paddingHorizontal: 16,
-    paddingTop: 14, paddingBottom: 8,
+    paddingTop: 14, paddingBottom: 8, alignItems: 'center', flexWrap: 'wrap',
   },
   branchScrollWrap: { height: 48 },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#F3F4F6' },
-  chipActive: { backgroundColor: '#347385' },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB' },
+  chipActive: { backgroundColor: '#347385', borderColor: '#347385' },
   chipText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
   chipTextActive: { color: '#fff' },
+
+  exportPdfBtn: {
+    marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#347385', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16,
+  },
+  exportPdfText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  customDateRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingBottom: 10,
+  },
+  dateBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  dateBtnText: { fontSize: 12, color: '#374151', fontWeight: '600' },
 
   cardRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   cardRowTablet: {},

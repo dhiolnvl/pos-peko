@@ -6,6 +6,7 @@ interface Props {
   onChange: (value: string) => void;
   prefix?: string;
   maxLength?: number;
+  placeholder?: string;
 }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', '⌫'];

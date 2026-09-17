@@ -9,27 +9,36 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Dimensions, FlatList, Modal, useWindowDimensions,
+  ActivityIndicator, Dimensions, FlatList, Modal, useWindowDimensions, Alert, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Print from 'expo-print';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import {
   getBranchSummaries, fetchAllBranches, fmtCurrency,
   startOfDay, endOfDay, type BranchSummary,
 } from '@/lib/ownerQueries';
-import { getSalesReport, type SalesReportResult, type SalesTransaction } from '@/lib/reportQueries';
+import {
+  getSalesReport, buildSalesConsolidatedPdfHtml, formatDetailedPeriodLabel,
+  type SalesReportResult, type SalesTransaction,
+} from '@/lib/reportQueries';
 import { TabletCenteredView } from '@/components/TabletCenteredView';
 import { OwnerPageHeader } from '@/components/OwnerHeader';
+import DatePickerModal from '@/components/DatePickerModal';
+import { mmkv, StorageKeys } from '@/lib/mmkvStorage';
+import { APP_NAME } from '@/constants/config';
 
 const { width: SW } = Dimensions.get('window');
 const BRANCH_COLORS = ['#347385', '#56B2C1', '#22C55E', '#F59E0B', '#06B6D4', '#EF4444'];
 
 // ─── Preset periods ────────────────────────────────────────────────────────────
 
-type Preset = 'today' | 'week' | 'month';
+type Preset = 'today' | 'week' | 'month' | 'custom';
 
-function getRange(preset: Preset) {
+function getRange(preset: Preset, customFrom?: string, customTo?: string) {
   const today = new Date();
   if (preset === 'today') {
     return { from: startOfDay(today), to: endOfDay(today) };
@@ -39,9 +48,14 @@ function getRange(preset: Preset) {
     start.setDate(today.getDate() - 6);
     return { from: startOfDay(start), to: endOfDay(today) };
   }
-  const start = new Date(today);
-  start.setDate(1);
-  return { from: startOfDay(start), to: endOfDay(today) };
+  if (preset === 'month') {
+    const start = new Date(today);
+    start.setDate(1);
+    return { from: startOfDay(start), to: endOfDay(today) };
+  }
+  const fromD = customFrom ? new Date(customFrom) : today;
+  const toD = customTo ? new Date(customTo) : today;
+  return { from: startOfDay(fromD), to: endOfDay(toD) };
 }
 
 // ─── Simple bar chart ──────────────────────────────────────────────────────────
@@ -104,22 +118,27 @@ function DrilldownModal({
   }, [branchId, from, to]);
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <View style={ddStyles.container}>
-        <OwnerPageHeader title={branchName} onClose={onClose} />
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: '#F9FAFB', paddingTop: insets.top }}>
+        <View style={ddStyles.header}>
+          <TouchableOpacity onPress={onClose} style={ddStyles.closeBtn}>
+            <Ionicons name="close" size={22} color="#374151" />
+          </TouchableOpacity>
+          <Text style={ddStyles.title} numberOfLines={1}>Detail Penjualan - {branchName}</Text>
+          <View style={{ width: 36 }} />
+        </View>
 
         {loading ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
             <ActivityIndicator size="large" color="#56B2C1" />
           </View>
         ) : report ? (
-          <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
             <View style={ddStyles.summaryRow}>
               {[
                 { label: 'Penjualan', value: fmtCurrency(report.total_revenue) },
-                { label: 'Transaksi', value: report.transaction_count.toString() },
-                { label: 'HPP', value: fmtCurrency(report.total_cost) },
                 { label: 'Laba Kotor', value: fmtCurrency(report.gross_profit) },
+                { label: 'Transaksi', value: report.transaction_count.toString() },
               ].map((m) => (
                 <View key={m.label} style={ddStyles.summaryCard}>
                   <Text style={ddStyles.summaryValue} numberOfLines={1}>{m.value}</Text>
@@ -166,12 +185,21 @@ export default function ConsolidatedSalesReport() {
   const params = useLocalSearchParams<{ branchId?: string; mode?: string }>();
 
   const [preset, setPreset] = useState<Preset>('today');
+  const [customFrom, setCustomFrom] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [customTo, setCustomTo] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [pickerTarget, setPickerTarget] = useState<'from' | 'to' | null>(null);
+
   const [branches, setBranches] = useState<OwnerBranch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(
     params.branchId ?? null
   );
   const [summaries, setSummaries] = useState<BranchSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [drilldown, setDrilldown] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
@@ -182,7 +210,7 @@ export default function ConsolidatedSalesReport() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { from, to } = getRange(preset);
+    const { from, to } = getRange(preset, customFrom, customTo);
     const bIds = selectedBranchId ? [selectedBranchId] : null;
     try {
       const data = await getBranchSummaries(bIds, from, to);
@@ -192,11 +220,11 @@ export default function ConsolidatedSalesReport() {
     } finally {
       setLoading(false);
     }
-  }, [preset, selectedBranchId]);
+  }, [preset, customFrom, customTo, selectedBranchId]);
 
   useEffect(() => { load(); }, [load]);
 
-  const { from, to } = getRange(preset);
+  const { from, to } = getRange(preset, customFrom, customTo);
   const totalRevenue = summaries.reduce((s, b) => s + b.total_revenue, 0);
   const totalTx = summaries.reduce((s, b) => s + b.transaction_count, 0);
   const totalGP = summaries.reduce((s, b) => s + b.gross_profit, 0);
@@ -207,6 +235,49 @@ export default function ConsolidatedSalesReport() {
     color: BRANCH_COLORS[i % BRANCH_COLORS.length],
   }));
 
+  const handleExportPdf = async () => {
+    if (summaries.length === 0) {
+      Alert.alert('Perhatian', 'Tidak ada data untuk diekspor');
+      return;
+    }
+    setExportingPdf(true);
+    try {
+      const periodStr = formatDetailedPeriodLabel(from, to);
+      const storeInfo = (await mmkv.getObject<any>(StorageKeys.STORE_SETTINGS)) ?? {};
+      const html = await buildSalesConsolidatedPdfHtml(
+        summaries,
+        { revenue: totalRevenue, transactions: totalTx, grossProfit: totalGP },
+        {
+          periodLabel: periodStr,
+          storeName: storeInfo.store_name || storeInfo.name || APP_NAME,
+          storeAddress: storeInfo.address,
+          branchName: selectedBranchId ? branches.find((b) => b.id === selectedBranchId)?.name : 'Semua Cabang',
+        },
+      );
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const fileName = `laporan-penjualan-${from.slice(0, 10)}-${to.slice(0, 10)}.pdf`;
+
+      if (Platform.OS === 'android') {
+        const perm = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (perm.granted) {
+          const dest = await FileSystem.StorageAccessFramework.createFileAsync(perm.directoryUri, fileName, 'application/pdf');
+          const content = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+          await FileSystem.writeAsStringAsync(dest, content, { encoding: FileSystem.EncodingType.Base64 });
+          Alert.alert('Berhasil', `PDF tersimpan:\n${fileName}`);
+        } else {
+          await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Simpan PDF' });
+        }
+      } else {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Simpan PDF' });
+      }
+    } catch (e: any) {
+      Alert.alert('Gagal', e?.message || 'Gagal membuat PDF');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <OwnerPageHeader title="Penjualan Konsolidasi" onBack={() => router.back()} />
@@ -215,18 +286,43 @@ export default function ConsolidatedSalesReport() {
         <TabletCenteredView>
           {/* Preset filter */}
           <View style={styles.filterRow}>
-            {(['today', 'week', 'month'] as Preset[]).map((p) => (
+            {(['today', 'week', 'month', 'custom'] as Preset[]).map((p) => (
               <TouchableOpacity
                 key={p}
                 style={[styles.chip, preset === p && styles.chipActive]}
                 onPress={() => setPreset(p)}
               >
                 <Text style={[styles.chipText, preset === p && styles.chipTextActive]}>
-                  {p === 'today' ? 'Hari Ini' : p === 'week' ? '7 Hari' : 'Bulan Ini'}
+                  {p === 'today' ? 'Hari Ini' : p === 'week' ? '7 Hari' : p === 'month' ? 'Bulan Ini' : 'Custom'}
                 </Text>
               </TouchableOpacity>
             ))}
+
+            <TouchableOpacity style={styles.exportPdfBtn} onPress={handleExportPdf} disabled={exportingPdf}>
+              {exportingPdf ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="document-text-outline" size={14} color="#fff" />
+                  <Text style={styles.exportPdfText}>Export PDF</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
+
+          {preset === 'custom' && (
+            <View style={styles.customDateRow}>
+              <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('from')}>
+                <Ionicons name="calendar-outline" size={14} color="#347385" />
+                <Text style={styles.dateBtnText}>Dari: {customFrom}</Text>
+              </TouchableOpacity>
+              <Text style={{ color: '#9CA3AF' }}>-</Text>
+              <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('to')}>
+                <Ionicons name="calendar-outline" size={14} color="#347385" />
+                <Text style={styles.dateBtnText}>Sampai: {customTo}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Branch filter */}
           <FlatList
@@ -338,6 +434,20 @@ export default function ConsolidatedSalesReport() {
           onClose={() => setDrilldown(null)}
         />
       )}
+
+      {pickerTarget && (
+        <DatePickerModal
+          visible={!!pickerTarget}
+          value={pickerTarget === 'from' ? customFrom : customTo}
+          title={pickerTarget === 'from' ? 'Pilih Tanggal Mulai' : 'Pilih Tanggal Akhir'}
+          onConfirm={(d) => {
+            if (pickerTarget === 'from') setCustomFrom(d);
+            else setCustomTo(d);
+            setPickerTarget(null);
+          }}
+          onCancel={() => setPickerTarget(null)}
+        />
+      )}
     </View>
   );
 }
@@ -347,12 +457,29 @@ const styles = StyleSheet.create({
 
   filterRow: {
     flexDirection: 'row', gap: 8, paddingHorizontal: 16,
-    paddingTop: 14, paddingBottom: 8,
+    paddingTop: 14, paddingBottom: 8, alignItems: 'center', flexWrap: 'wrap',
   },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#F3F4F6' },
-  chipActive: { backgroundColor: '#56B2C1' },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB' },
+  chipActive: { backgroundColor: '#56B2C1', borderColor: '#56B2C1' },
   chipText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
   chipTextActive: { color: '#fff' },
+
+  exportPdfBtn: {
+    marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#347385', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16,
+  },
+  exportPdfText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  customDateRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingBottom: 10,
+  },
+  dateBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  dateBtnText: { fontSize: 12, color: '#374151', fontWeight: '600' },
 
   cardRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
   cardRowTablet: {},
@@ -386,6 +513,13 @@ const styles = StyleSheet.create({
 
 const ddStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F3F4F6' },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff',
+    borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+  },
+  closeBtn: { padding: 4 },
+  title: { fontSize: 16, fontWeight: '700', color: '#111827' },
   summaryRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   summaryCard: {
     flex: 1, minWidth: '45%', backgroundColor: '#fff', borderRadius: 10, padding: 12,

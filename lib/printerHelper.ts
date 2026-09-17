@@ -336,8 +336,9 @@ export async function shareReceiptAsText(text: string, invoiceNumber: string): P
 
 export async function saveReceiptToFile(text: string, invoiceNumber: string): Promise<string | null> {
   try {
-    const path = `${FileSystem.documentDirectory}struk_${invoiceNumber.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
-    await FileSystem.writeAsStringAsync(path, text, { encoding: FileSystem.EncodingType.UTF8 });
+    const docDir = (FileSystem as any).documentDirectory ?? '';
+    const path = `${docDir}struk_${invoiceNumber.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+    await (FileSystem as any).writeAsStringAsync(path, text, { encoding: (FileSystem as any).EncodingType?.UTF8 ?? 'utf8' });
     return path;
   } catch (e) {
     console.error('[Printer] saveReceiptToFile error:', e);

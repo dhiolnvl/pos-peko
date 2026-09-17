@@ -677,3 +677,306 @@ export async function buildAttendancePdfHtml(
     </table>
     </body></html>`;
 }
+
+// ─── Period Label Formatter Helper ─────────────────────────────────────────────
+
+const MONTHS_INDONESIA = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+];
+
+export function formatDetailedPeriodLabel(
+  dateFrom: string | Date | null,
+  dateTo: string | Date | null,
+  fallbackLabel?: string,
+): string {
+  if (!dateFrom && !dateTo) return fallbackLabel ?? 'Semua Periode';
+
+  try {
+    const dFrom = dateFrom ? (typeof dateFrom === 'string' ? new Date(dateFrom) : dateFrom) : null;
+    const dTo = dateTo ? (typeof dateTo === 'string' ? new Date(dateTo) : dateTo) : null;
+
+    if (dFrom && dTo) {
+      if (
+        dFrom.getFullYear() === dTo.getFullYear() &&
+        dFrom.getMonth() === dTo.getMonth()
+      ) {
+        const lastDayOfMonth = new Date(dTo.getFullYear(), dTo.getMonth() + 1, 0).getDate();
+        if (dFrom.getDate() === 1 && dTo.getDate() === lastDayOfMonth) {
+          return `${MONTHS_INDONESIA[dFrom.getMonth()]} ${dFrom.getFullYear()}`;
+        }
+        if (dFrom.getDate() === dTo.getDate()) {
+          return `${dFrom.getDate()} ${MONTHS_INDONESIA[dFrom.getMonth()]} ${dFrom.getFullYear()}`;
+        }
+        return `${dFrom.getDate()} - ${dTo.getDate()} ${MONTHS_INDONESIA[dFrom.getMonth()]} ${dFrom.getFullYear()}`;
+      }
+      return `${dFrom.getDate()} ${MONTHS_INDONESIA[dFrom.getMonth()]} ${dFrom.getFullYear()} - ${dTo.getDate()} ${MONTHS_INDONESIA[dTo.getMonth()]} ${dTo.getFullYear()}`;
+    }
+
+    if (dFrom) {
+      return `Mulai ${dFrom.getDate()} ${MONTHS_INDONESIA[dFrom.getMonth()]} ${dFrom.getFullYear()}`;
+    }
+    if (dTo) {
+      return `Sampai ${dTo.getDate()} ${MONTHS_INDONESIA[dTo.getMonth()]} ${dTo.getFullYear()}`;
+    }
+  } catch {}
+
+  return fallbackLabel ?? 'Semua Periode';
+}
+
+// ─── Laporan Penjualan (PDF) ──────────────────────────────────────────────────
+
+export interface SalesPdfSummaryRow {
+  branch_name: string;
+  total_revenue: number;
+  transaction_count: number;
+  gross_profit: number;
+}
+
+export async function buildSalesConsolidatedPdfHtml(
+  summaries: SalesPdfSummaryRow[],
+  totals: { revenue: number; transactions: number; grossProfit: number },
+  opts: {
+    periodLabel: string;
+    storeName: string;
+    storeAddress?: string | null;
+    branchName?: string;
+  },
+): Promise<string> {
+  const logoSrc = await getLogoBase64();
+
+  const tableRows = summaries.map((r, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#F9FAFB'}">
+      <td>${i + 1}</td>
+      <td style="font-weight:600">${r.branch_name}</td>
+      <td style="text-align:right;font-weight:700">${fmtCurrency(r.total_revenue)}</td>
+      <td style="text-align:center">${r.transaction_count}</td>
+      <td style="text-align:right;color:#16A34A;font-weight:700">${fmtCurrency(r.gross_profit)}</td>
+    </tr>`).join('');
+
+  return `
+    <html><head><meta charset="utf-8">
+    <style>
+      @page { size: A4 portrait; margin: 16mm 12mm; }
+      body { font-family: sans-serif; color: #111827; font-size: 11px; }
+      .page-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #347385; padding-bottom: 12px; margin-bottom: 16px; }
+      .logo { height: 48px; object-fit: contain; }
+      .store-info { text-align: right; }
+      .store-name { font-size: 15px; font-weight: 800; color: #111827; }
+      .store-addr { font-size: 11px; color: #6B7280; margin-top: 2px; }
+      h1 { font-size: 18px; font-weight: 800; color: #111827; margin: 0 0 4px; }
+      .sub { font-size: 11px; color: #6B7280; margin-bottom: 14px; }
+      .meta-grid { display: flex; gap: 12px; margin-bottom: 16px; }
+      .meta-box { flex: 1; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px; padding: 10px 12px; }
+      .meta-label { font-size: 10px; color: #6B7280; margin-bottom: 3px; }
+      .meta-value { font-size: 14px; font-weight: 800; color: #111827; }
+      .meta-value.green { color: #16A34A; }
+      table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+      th { background: #347385; color: #fff; padding: 7px 8px; text-align: left; }
+      td { padding: 6px 8px; border-bottom: 1px solid #F3F4F6; }
+      tfoot td { font-weight: 800; background: #EEF8FA; padding: 7px 8px; border-top: 2px solid #A9DFE9; }
+    </style></head><body>
+    <div class="page-header">
+      <div>
+        <h1>Laporan Penjualan</h1>
+        <div class="sub">Periode: ${opts.periodLabel} ${opts.branchName ? `&nbsp;·&nbsp; ${opts.branchName}` : ''}</div>
+      </div>
+      <div class="store-info">
+        ${logoSrc ? `<img src="${logoSrc}" class="logo" />` : ''}
+        <div class="store-name">${opts.storeName}</div>
+        ${opts.storeAddress ? `<div class="store-addr">${opts.storeAddress}</div>` : ''}
+      </div>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-box"><div class="meta-label">Total Penjualan</div><div class="meta-value">${fmtCurrency(totals.revenue)}</div></div>
+      <div class="meta-box"><div class="meta-label">Total Transaksi</div><div class="meta-value">${totals.transactions}</div></div>
+      <div class="meta-box"><div class="meta-label">Est. Laba Kotor</div><div class="meta-value green">${fmtCurrency(totals.grossProfit)}</div></div>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:28px">#</th>
+        <th>Cabang</th>
+        <th style="text-align:right">Penjualan</th>
+        <th style="text-align:center">Total Tx</th>
+        <th style="text-align:right">Laba Kotor Est.</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+      <tfoot><tr>
+        <td colspan="2">TOTAL</td>
+        <td style="text-align:right">${fmtCurrency(totals.revenue)}</td>
+        <td style="text-align:center">${totals.transactions}</td>
+        <td style="text-align:right;color:#16A34A">${fmtCurrency(totals.grossProfit)}</td>
+      </tr></tfoot>
+    </table>
+    </body></html>`;
+}
+
+// ─── Laporan Pengeluaran (PDF) ────────────────────────────────────────────────
+
+export interface ExpensePdfRow {
+  date: string;
+  category: string;
+  amount: number;
+  notes: string;
+  createdBy: string;
+  branchName: string;
+}
+
+export async function buildExpensesPdfHtml(
+  rows: ExpensePdfRow[],
+  totalAmount: number,
+  opts: {
+    periodLabel: string;
+    branchName: string;
+    storeName: string;
+    storeAddress?: string | null;
+  },
+): Promise<string> {
+  const logoSrc = await getLogoBase64();
+
+  const tableRows = rows.map((r, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#F9FAFB'}">
+      <td>${r.date}</td>
+      <td style="font-weight:600">${r.category}</td>
+      <td style="text-align:right;font-weight:700;color:#DC2626">${fmtCurrency(r.amount)}</td>
+      <td>${r.notes || '-'}</td>
+      <td>${r.createdBy}</td>
+      <td>${r.branchName}</td>
+    </tr>`).join('');
+
+  return `
+    <html><head><meta charset="utf-8">
+    <style>
+      @page { size: A4 portrait; margin: 16mm 12mm; }
+      body { font-family: sans-serif; color: #111827; font-size: 11px; }
+      .page-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #347385; padding-bottom: 12px; margin-bottom: 16px; }
+      .logo { height: 48px; object-fit: contain; }
+      .store-info { text-align: right; }
+      .store-name { font-size: 15px; font-weight: 800; color: #111827; }
+      .store-addr { font-size: 11px; color: #6B7280; margin-top: 2px; }
+      h1 { font-size: 18px; font-weight: 800; color: #111827; margin: 0 0 4px; }
+      .sub { font-size: 11px; color: #6B7280; margin-bottom: 14px; }
+      .meta-grid { display: flex; gap: 12px; margin-bottom: 16px; }
+      .meta-box { flex: 1; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px; padding: 10px 12px; }
+      .meta-label { font-size: 10px; color: #6B7280; margin-bottom: 3px; }
+      .meta-value { font-size: 14px; font-weight: 800; color: #DC2626; }
+      table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+      th { background: #347385; color: #fff; padding: 7px 8px; text-align: left; }
+      td { padding: 6px 8px; border-bottom: 1px solid #F3F4F6; }
+      tfoot td { font-weight: 800; background: #EEF8FA; padding: 7px 8px; border-top: 2px solid #A9DFE9; }
+    </style></head><body>
+    <div class="page-header">
+      <div>
+        <h1>Laporan Pengeluaran Operasional</h1>
+        <div class="sub">Periode: ${opts.periodLabel} &nbsp;·&nbsp; Cabang: ${opts.branchName}</div>
+      </div>
+      <div class="store-info">
+        ${logoSrc ? `<img src="${logoSrc}" class="logo" />` : ''}
+        <div class="store-name">${opts.storeName}</div>
+        ${opts.storeAddress ? `<div class="store-addr">${opts.storeAddress}</div>` : ''}
+      </div>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-box"><div class="meta-label">Total Pengeluaran</div><div class="meta-value">${fmtCurrency(totalAmount)}</div></div>
+      <div class="meta-box"><div class="meta-label">Total Transaksi Pengeluaran</div><div class="meta-value" style="color:#111827">${rows.length}</div></div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Tanggal</th>
+        <th>Kategori</th>
+        <th style="text-align:right">Jumlah (Rp)</th>
+        <th>Catatan</th>
+        <th>Oleh</th>
+        <th>Cabang</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+      <tfoot><tr>
+        <td colspan="2">TOTAL PENGELUARAN</td>
+        <td style="text-align:right;color:#DC2626">${fmtCurrency(totalAmount)}</td>
+        <td colspan="3"></td>
+      </tr></tfoot>
+    </table>
+    </body></html>`;
+}
+
+// ─── Laporan Distribusi (PDF) ─────────────────────────────────────────────────
+
+export interface TransferPdfRow {
+  date: string;
+  branchName: string;
+  createdByName: string;
+  statusLabel: string;
+  notes: string;
+}
+
+export async function buildTransfersPdfHtml(
+  rows: TransferPdfRow[],
+  opts: {
+    periodLabel: string;
+    storeName: string;
+    storeAddress?: string | null;
+  },
+): Promise<string> {
+  const logoSrc = await getLogoBase64();
+
+  const tableRows = rows.map((r, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#F9FAFB'}">
+      <td>${i + 1}</td>
+      <td>${r.date}</td>
+      <td style="font-weight:600">${r.branchName}</td>
+      <td>${r.createdByName}</td>
+      <td style="font-weight:700">${r.statusLabel}</td>
+      <td>${r.notes || '-'}</td>
+    </tr>`).join('');
+
+  return `
+    <html><head><meta charset="utf-8">
+    <style>
+      @page { size: A4 portrait; margin: 16mm 12mm; }
+      body { font-family: sans-serif; color: #111827; font-size: 11px; }
+      .page-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #347385; padding-bottom: 12px; margin-bottom: 16px; }
+      .logo { height: 48px; object-fit: contain; }
+      .store-info { text-align: right; }
+      .store-name { font-size: 15px; font-weight: 800; color: #111827; }
+      .store-addr { font-size: 11px; color: #6B7280; margin-top: 2px; }
+      h1 { font-size: 18px; font-weight: 800; color: #111827; margin: 0 0 4px; }
+      .sub { font-size: 11px; color: #6B7280; margin-bottom: 14px; }
+      .meta-grid { display: flex; gap: 12px; margin-bottom: 16px; }
+      .meta-box { flex: 1; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px; padding: 10px 12px; }
+      .meta-label { font-size: 10px; color: #6B7280; margin-bottom: 3px; }
+      .meta-value { font-size: 14px; font-weight: 800; color: #347385; }
+      table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+      th { background: #347385; color: #fff; padding: 7px 8px; text-align: left; }
+      td { padding: 6px 8px; border-bottom: 1px solid #F3F4F6; }
+      tfoot td { font-weight: 800; background: #EEF8FA; padding: 7px 8px; border-top: 2px solid #A9DFE9; }
+    </style></head><body>
+    <div class="page-header">
+      <div>
+        <h1>Laporan Distribusi Stok</h1>
+        <div class="sub">Periode: ${opts.periodLabel}</div>
+      </div>
+      <div class="store-info">
+        ${logoSrc ? `<img src="${logoSrc}" class="logo" />` : ''}
+        <div class="store-name">${opts.storeName}</div>
+        ${opts.storeAddress ? `<div class="store-addr">${opts.storeAddress}</div>` : ''}
+      </div>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-box"><div class="meta-label">Total Distribusi</div><div class="meta-value">${rows.length}</div></div>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:28px">#</th>
+        <th>Tanggal</th>
+        <th>Cabang Tujuan</th>
+        <th>Dibuat Oleh</th>
+        <th>Status</th>
+        <th>Catatan</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+      <tfoot><tr>
+        <td colspan="6">TOTAL — ${rows.length} pengiriman distribusi</td>
+      </tr></tfoot>
+    </table>
+    </body></html>`;
+}

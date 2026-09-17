@@ -10,16 +10,51 @@ import {
   ScrollView,
   useWindowDimensions,
   RefreshControl,
+  Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Print from 'expo-print';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useBackFromDashboard } from '@/hooks/useBackFromDashboard';
 import { OwnerPageHeader } from '@/components/OwnerHeader';
 import { TabletCenteredView } from '@/components/TabletCenteredView';
 import { fetchAllBranches } from '@/lib/ownerQueries';
 import { getAllExpenses, getExpenseStats, EXPENSE_CATEGORIES, type ExpenseWithBranch, type ExpenseStats } from '@/lib/expenseQueries';
+import { buildExpensesPdfHtml, formatDetailedPeriodLabel, type ExpensePdfRow } from '@/lib/reportQueries';
+import DatePickerModal from '@/components/DatePickerModal';
+import { mmkv, StorageKeys } from '@/lib/mmkvStorage';
+import { APP_NAME } from '@/constants/config';
 import type { Branch } from '@/types';
+
+type Preset = 'all' | 'today' | 'week' | 'month' | 'custom';
+
+function getRange(preset: Preset, customFrom?: string, customTo?: string): { dateFrom?: string; dateTo?: string } {
+  const now = new Date();
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const dateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  if (preset === 'all') {
+    return { dateFrom: undefined, dateTo: undefined };
+  }
+  if (preset === 'today') {
+    const today = dateStr(now);
+    return { dateFrom: today, dateTo: today };
+  }
+  if (preset === 'week') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 6);
+    return { dateFrom: dateStr(start), dateTo: dateStr(now) };
+  }
+  if (preset === 'month') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { dateFrom: dateStr(start), dateTo: dateStr(now) };
+  }
+  return { dateFrom: customFrom ?? dateStr(now), dateTo: customTo ?? dateStr(now) };
+}
 
 function fmtMoney(n: number) {
   return 'Rp ' + n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
@@ -172,7 +207,7 @@ const brkStyles = StyleSheet.create({
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
-export default function OwnerExpensesScreen() {
+export default function StaffPusatExpensesScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
@@ -183,6 +218,18 @@ export default function OwnerExpensesScreen() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [preset, setPreset] = useState<Preset>('month');
+  const [customFrom, setCustomFrom] = useState<string>(() => {
+    const d = new Date(); d.setDate(1);
+    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-01`;
+  });
+  const [customTo, setCustomTo] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+  });
+  const [pickerTarget, setPickerTarget] = useState<'from' | 'to' | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
@@ -195,9 +242,10 @@ export default function OwnerExpensesScreen() {
     if (!isRefresh) setLoading(true);
     try {
       const branchId = selectedBranch === 'all' ? undefined : selectedBranch;
+      const { dateFrom, dateTo } = getRange(preset, customFrom, customTo);
       const [list, statsData] = await Promise.all([
-        getAllExpenses({ limit: 200, branchId, category: categoryFilter }),
-        getExpenseStats(branchId),
+        getAllExpenses({ limit: 500, branchId, category: categoryFilter, dateFrom, dateTo }),
+        getExpenseStats(branchId, dateFrom, dateTo),
       ]);
       setExpenses(list);
       setStats(statsData);
@@ -206,12 +254,70 @@ export default function OwnerExpensesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedBranch, categoryFilter]);
+  }, [selectedBranch, categoryFilter, preset, customFrom, customTo]);
 
   useEffect(() => { loadBranches(); }, []);
   useEffect(() => { loadData(); }, [loadData]);
 
   const onRefresh = useCallback(() => { setRefreshing(true); loadData(true); }, [loadData]);
+
+  const handleExportPdf = async () => {
+    if (expenses.length === 0) {
+      Alert.alert('Perhatian', 'Tidak ada data pengeluaran untuk diekspor');
+      return;
+    }
+    setExportingPdf(true);
+    try {
+      const { dateFrom, dateTo } = getRange(preset, customFrom, customTo);
+      const periodStr = formatDetailedPeriodLabel(
+        dateFrom ?? '',
+        dateTo ?? '',
+        preset === 'all' ? 'Semua Waktu' : undefined
+      );
+      const storeInfo = (await mmkv.getObject<any>(StorageKeys.STORE_SETTINGS)) ?? {};
+
+      const rows: ExpensePdfRow[] = expenses.map((e) => ({
+        date: e.date,
+        category: e.category,
+        amount: e.amount,
+        notes: e.notes || '-',
+        createdBy: e.created_by_name || '-',
+        branchName: e.branch_name,
+      }));
+
+      const html = await buildExpensesPdfHtml(
+        rows,
+        stats.totalAmount,
+        {
+          periodLabel: periodStr,
+          branchName: selectedBranch === 'all' ? 'Semua Cabang' : (branches.find((b) => b.id === selectedBranch)?.name || 'Cabang'),
+          storeName: storeInfo.store_name || storeInfo.name || APP_NAME,
+          storeAddress: storeInfo.address,
+        }
+      );
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const fileName = `laporan-pengeluaran-${dateFrom || 'semua'}-${dateTo || ''}.pdf`;
+
+      if (Platform.OS === 'android') {
+        const perm = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (perm.granted) {
+          const dest = await FileSystem.StorageAccessFramework.createFileAsync(perm.directoryUri, fileName, 'application/pdf');
+          const content = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+          await FileSystem.writeAsStringAsync(dest, content, { encoding: FileSystem.EncodingType.Base64 });
+          Alert.alert('Berhasil', `PDF tersimpan:\n${fileName}`);
+        } else {
+          await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Simpan PDF' });
+        }
+      } else {
+        await Sharing.shareAsync(uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Simpan PDF' });
+      }
+    } catch (e: any) {
+      Alert.alert('Gagal', e?.message || 'Gagal membuat PDF');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   const numCols = isTablet ? 2 : 1;
 
@@ -232,6 +338,48 @@ export default function OwnerExpensesScreen() {
       />
 
       <TabletCenteredView style={{ backgroundColor: '#F0F7F9' }}>
+        {/* Preset filter & Export PDF */}
+        <View style={styles.filterRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, alignItems: 'center' }}>
+            {(['month', 'today', 'week', 'custom', 'all'] as Preset[]).map((p) => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.chip, preset === p && styles.chipActive]}
+                onPress={() => setPreset(p)}
+              >
+                <Text style={[styles.chipText, preset === p && styles.chipTextActive]}>
+                  {p === 'month' ? 'Bulan Ini' : p === 'today' ? 'Hari Ini' : p === 'week' ? '7 Hari' : p === 'custom' ? 'Custom' : 'Semua'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <TouchableOpacity style={styles.exportPdfBtn} onPress={handleExportPdf} disabled={exportingPdf}>
+            {exportingPdf ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="document-text-outline" size={14} color="#fff" />
+                <Text style={styles.exportPdfText}>PDF</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Custom date range selector */}
+        {preset === 'custom' && (
+          <View style={styles.customDateRow}>
+            <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('from')}>
+              <Ionicons name="calendar-outline" size={14} color="#347385" />
+              <Text style={styles.dateBtnText}>Dari: {customFrom}</Text>
+            </TouchableOpacity>
+            <Text style={{ color: '#9CA3AF' }}>-</Text>
+            <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('to')}>
+              <Ionicons name="calendar-outline" size={14} color="#347385" />
+              <Text style={styles.dateBtnText}>Sampai: {customTo}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Stats */}
         <View style={styles.statsWrap}>
           <ScrollView
@@ -331,6 +479,20 @@ export default function OwnerExpensesScreen() {
       {showBreakdown && (
         <BreakdownModal stats={stats} onClose={() => setShowBreakdown(false)} />
       )}
+
+      {pickerTarget && (
+        <DatePickerModal
+          visible={!!pickerTarget}
+          value={pickerTarget === 'from' ? customFrom : customTo}
+          title={pickerTarget === 'from' ? 'Pilih Tanggal Mulai' : 'Pilih Tanggal Akhir'}
+          onConfirm={(d) => {
+            if (pickerTarget === 'from') setCustomFrom(d);
+            else setCustomTo(d);
+            setPickerTarget(null);
+          }}
+          onCancel={() => setPickerTarget(null)}
+        />
+      )}
     </View>
   );
 }
@@ -340,10 +502,28 @@ const styles = StyleSheet.create({
   statsWrap: { height: 90, justifyContent: 'center', paddingVertical: 12 },
   breakdownBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   filterWrap: { height: 40, justifyContent: 'center', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  filterRow: {
+    flexDirection: 'row', gap: 8, paddingHorizontal: 16,
+    paddingTop: 10, paddingBottom: 6, alignItems: 'center', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+  },
   chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: '#F3F4F6' },
   chipActive: { backgroundColor: '#347385' },
   chipText: { fontSize: 13, fontWeight: '600', color: '#6B7280' },
   chipTextActive: { color: '#fff' },
+  exportPdfBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#DC2626', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+  },
+  exportPdfText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  customDateRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16,
+    paddingVertical: 8, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+  },
+  dateBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F0F7F9',
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#A9DFE9',
+  },
+  dateBtnText: { fontSize: 12, fontWeight: '600', color: '#347385' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8, paddingTop: 60 },
   emptyTitle: { fontSize: 15, fontWeight: '700', color: '#374151' },
   emptyDesc: { fontSize: 13, color: '#9CA3AF', textAlign: 'center', maxWidth: 280 },

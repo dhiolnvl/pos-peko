@@ -5,7 +5,12 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MMKV } from 'react-native-mmkv';
-import type { StorageAdapter } from '@supabase/supabase-js';
+
+export interface StorageAdapter {
+  getItem: (key: string) => Promise<string | null> | string | null;
+  setItem: (key: string, value: string) => Promise<void> | void;
+  removeItem: (key: string) => Promise<void> | void;
+}
 
 export const mmkvStorageAdapter: StorageAdapter = {
   getItem: async (key: string) => {
@@ -147,6 +152,7 @@ export const StorageKeys = {
   CURRENT_BRANCH: 'auth.current_branch',
   THEME: 'settings.theme',
   LANGUAGE: 'settings.language',
+  STORE_SETTINGS: 'settings.store',
   PRINTER_CONFIG: 'settings.printer',
   LAST_SYNC: 'sync.last_sync_time',
   OFFLINE_MODE: 'app.offline_mode',

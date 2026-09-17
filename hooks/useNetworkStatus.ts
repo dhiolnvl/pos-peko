@@ -26,7 +26,7 @@ export const useNetworkStatus = () => {
 
       setIsConnected(state.isConnected ?? false);
       setIsInternetReachable(state.isInternetReachable ?? false);
-      setNetworkType(state.type);
+      setNetworkType(state.type ?? null);
     } catch (error) {
       console.error('Failed to check network state:', error);
       setIsConnected(false);

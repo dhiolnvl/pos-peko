@@ -92,7 +92,7 @@ export interface PendingOpname {
   item_count: number;
   total_difference: number;
   notes: string | null;
-  status: string;
+  status: 'submitted' | 'approved' | 'rejected' | 'draft';
   review_notes: string | null;
 }
 
@@ -354,8 +354,8 @@ export async function deletePurchaseOrder(poId: string): Promise<void> {
 
 // ─── 8. List Stock Transfers ──────────────────────────────────────────────────
 
-export async function getStockTransfers(warehouseId: string): Promise<StockTransferHeader[]> {
-  const { data, error } = await supabase
+export async function getStockTransfers(warehouseId?: string): Promise<StockTransferHeader[]> {
+  let query = supabase
     .from('stock_transfers')
     .select(`
       id,
@@ -365,13 +365,19 @@ export async function getStockTransfers(warehouseId: string): Promise<StockTrans
       notes,
       created_by,
       sent_at,
+      received_at,
       created_at,
       updated_at,
       branches!branch_id(name),
       users!created_by(name)
     `)
-    .eq('warehouse_id', warehouseId)
     .order('created_at', { ascending: false });
+
+  if (warehouseId) {
+    query = query.eq('warehouse_id', warehouseId);
+  }
+
+  const { data, error } = await query;
 
   if (error) throw error;
 
@@ -389,6 +395,10 @@ export async function getStockTransfers(warehouseId: string): Promise<StockTrans
     created_at: row.created_at,
     updated_at: row.updated_at ?? null,
   }));
+}
+
+export async function getAllStockTransfers(): Promise<StockTransferHeader[]> {
+  return getStockTransfers();
 }
 
 // ─── 9. Detail Stock Transfer ─────────────────────────────────────────────────

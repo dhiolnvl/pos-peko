@@ -35,6 +35,7 @@ import { formatCurrency } from "@/constants/config";
 import { calcPoints, getPointsPerRupiah } from "@/lib/memberQueries";
 import { getActiveShift, ensureShiftTable } from "@/lib/shiftQueries";
 import { mmkv } from "@/lib/mmkvStorage";
+import { supabase } from "@/lib/supabase";
 import { printReceipt } from "@/lib/printerHelper";
 import { thermalPrinterService } from "@/lib/thermalPrinterService";
 
@@ -265,7 +266,7 @@ export default function CashierScreen() {
       const pct = s?.tax_percentage ?? 0;
       posStore.setTaxRate(pct / 100);
     });
-    supabase.from('settings').select('value').eq('key', 'tax_percentage').maybeSingle().then(({ data }) => {
+    Promise.resolve(supabase.from('settings').select('value').eq('key', 'tax_percentage').maybeSingle()).then(({ data }) => {
       if (data?.value !== undefined) {
         const pct = parseFloat(data.value) || 0;
         posStore.setTaxRate(pct / 100);
