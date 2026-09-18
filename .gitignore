@@ -8,8 +8,16 @@ node_modules/
 dist/
 web-build/
 
-# Native
-*.orig.*
+# Native build directories
+android/build/
+android/app/build/
+android/.gradle/
+android/.cxx/
+ios/build/
+ios/Pods/
+ios/DerivedData/
+
+# Native secrets/cert
 *.jks
 *.p8
 *.p12

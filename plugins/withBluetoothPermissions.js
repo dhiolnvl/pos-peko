@@ -5,6 +5,10 @@ module.exports = function withBluetoothPermissions(config) {
     const manifest = config.modResults;
     const mainApplication = manifest.manifest;
 
+    if (!mainApplication.$['xmlns:tools']) {
+      mainApplication.$['xmlns:tools'] = 'http://schemas.android.com/tools';
+    }
+
     if (!mainApplication['uses-permission']) {
       mainApplication['uses-permission'] = [];
     }
@@ -19,6 +23,7 @@ module.exports = function withBluetoothPermissions(config) {
         $: {
           'android:name': 'android.permission.BLUETOOTH_SCAN',
           'android:usesPermissionFlags': 'neverForLocation',
+          'tools:replace': 'android:usesPermissionFlags',
         },
       },
       {
@@ -43,13 +48,15 @@ module.exports = function withBluetoothPermissions(config) {
       if (!existing.includes(name)) {
         mainApplication['uses-permission'].push(perm);
       } else {
-        // update entry yang sudah ada (tambah flag kalau belum ada)
+        // update entry yang sudah ada (tambah flag dan tools:replace kalau belum ada)
         const idx = mainApplication['uses-permission'].findIndex(
           (p) => p.$?.['android:name'] === name
         );
         if (idx !== -1 && perm.$['android:usesPermissionFlags']) {
           mainApplication['uses-permission'][idx].$['android:usesPermissionFlags'] =
             perm.$['android:usesPermissionFlags'];
+          mainApplication['uses-permission'][idx].$['tools:replace'] =
+            'android:usesPermissionFlags';
         }
       }
     }

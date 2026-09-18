@@ -269,7 +269,26 @@ export default function StaffPusatSalesReport() {
 
   return (
     <View style={styles.container}>
-      <OwnerPageHeader title="Laporan Penjualan" onBack={() => router.back()} />
+      <OwnerPageHeader
+        title="Laporan Penjualan"
+        onBack={() => router.back()}
+        rightElement={
+          <TouchableOpacity
+            style={[styles.exportPdfBtn, (exportingPdf || summaries.length === 0) && { opacity: 0.6 }]}
+            onPress={handleExportPdf}
+            disabled={exportingPdf || summaries.length === 0}
+          >
+            {exportingPdf ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="document-text-outline" size={14} color="#fff" />
+                <Text style={styles.exportPdfText}>Export PDF</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
         <TabletCenteredView>
@@ -282,11 +301,25 @@ export default function StaffPusatSalesReport() {
                 onPress={() => setPreset(p)}
               >
                 <Text style={[styles.chipText, preset === p && styles.chipTextActive]}>
-                  {p === 'today' ? 'Hari Ini' : p === 'week' ? '7 Hari' : 'Bulan Ini'}
+                  {p === 'today' ? 'Hari Ini' : p === 'week' ? '7 Hari' : p === 'month' ? 'Bulan Ini' : 'Custom'}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
+
+          {preset === 'custom' && (
+            <View style={styles.customDateRow}>
+              <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('from')}>
+                <Ionicons name="calendar-outline" size={14} color="#347385" />
+                <Text style={styles.dateBtnText}>Dari: {customFrom}</Text>
+              </TouchableOpacity>
+              <Text style={{ color: '#9CA3AF' }}>-</Text>
+              <TouchableOpacity style={styles.dateBtn} onPress={() => setPickerTarget('to')}>
+                <Ionicons name="calendar-outline" size={14} color="#347385" />
+                <Text style={styles.dateBtnText}>Sampai: {customTo}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Branch filter */}
           <View style={styles.branchScrollWrap}>
