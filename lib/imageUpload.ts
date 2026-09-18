@@ -39,9 +39,13 @@ export const uploadProductImage = async (uri: string, productId: string): Promis
       .getPublicUrl(filePath);
 
     return publicUrlData.publicUrl;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to upload image:', error);
-    throw new Error('Gagal upload gambar');
+    const msg = error?.message || error?.error || 'Gagal upload gambar';
+    if (typeof msg === 'string' && (msg.toLowerCase().includes('bucket not found') || msg.toLowerCase().includes('not_found'))) {
+      throw new Error(`Bucket storage '${BUCKET_NAME}' belum dibuat di Supabase. Silakan buat bucket 'product-images' di Supabase Storage.`);
+    }
+    throw new Error(`Gagal upload gambar: ${msg}`);
   }
 };
 

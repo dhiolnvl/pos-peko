@@ -176,6 +176,10 @@ Pastikan:
 
 Pastikan migration sudah dijalankan lengkap, termasuk bagian helper functions.
 
+### Error: "Bucket not found" / "Gagal upload gambar"
+
+Jalankan file migration `migrations/063_create_product_images_bucket.sql` di SQL Editor Supabase untuk membuat bucket `product-images` dan kebijakan akses RLS (Policies) storage.
+
 ## 📚 Referensi
 
 - [Supabase Documentation](https://supabase.com/docs)
