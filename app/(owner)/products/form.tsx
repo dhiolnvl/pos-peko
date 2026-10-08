@@ -19,6 +19,7 @@ import { OFFProductPreview } from '@/components/OFFProductPreview';
 import { NumpadInput } from '@/components/NumpadInput';
 import { uploadOFFImageToStorage, type OFFProduct } from '@/lib/openFoodFacts';
 import { uploadProductImage } from '@/lib/imageUpload';
+import { logActivity } from '@/lib/logService';
 
 type Step = 1 | 2 | 3;
 
@@ -328,11 +329,23 @@ export default function OwnerProductFormScreen() {
         const now = new Date().toISOString();
         const { error } = await supabase.from('products').update({ ...productData, updated_at: now }).eq('id', id);
         if (error) throw new Error(error.message);
+        logActivity({
+          action: 'UPDATE_PRODUCT',
+          action_type: 'inventory',
+          description: `Mengubah data produk '${name.trim()}' (Harga: Rp ${priceNum.toLocaleString('id-ID')})`,
+          details: { product_id: id, name: name.trim(), price: priceNum },
+        });
       } else {
         const now = new Date().toISOString();
         const { error } = await supabase.from('products').insert({ id: newId, ...productData, created_at: now, updated_at: now });
         if (error) throw new Error(error.message);
         productId = newId;
+        logActivity({
+          action: 'CREATE_PRODUCT',
+          action_type: 'inventory',
+          description: `Menambahkan produk baru '${name.trim()}' (Harga: Rp ${priceNum.toLocaleString('id-ID')})`,
+          details: { product_id: newId, name: name.trim(), price: priceNum },
+        });
       }
 
       const selectedArr = Array.from(selectedBranchIds);

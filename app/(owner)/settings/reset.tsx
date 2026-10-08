@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
+import { logActivity } from '@/lib/logService';
 
 // Tabel yang akan dihapus datanya (urutan penting — child dulu sebelum parent)
 const RESET_TABLES = [
@@ -134,6 +135,13 @@ export default function ResetDataScreen() {
         .update({ stock: 0, updated_at: new Date().toISOString() })
         .neq('id', '00000000-0000-0000-0000-000000000000');
       if (bpError) throw new Error(`Gagal mereset stok cabang: ${bpError.message}`);
+
+      await logActivity({
+        action: 'RESET_DATA',
+        action_type: 'settings',
+        description: 'Melakukan reset data operasional toko',
+        details: { reset_tables: RESET_TABLES },
+      });
 
       Alert.alert(
         'Reset Berhasil',

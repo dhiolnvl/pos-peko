@@ -7,6 +7,7 @@ import { calcItemDiscountAmount } from '@/store/posStore';
 import type { Member } from './memberQueries';
 import { offlineQueue } from './offlineQueue';
 import { offlineCache } from './offlineCache';
+import { logActivity } from './logService';
 
 export interface TransactionInput {
   cart: CartItem[];
@@ -165,6 +166,18 @@ export const processTransaction = async (
       invoice_number: string;
       low_stock_items: { id: string; name: string; stock: number; min_stock: number }[];
     };
+
+    logActivity({
+      action: 'CREATE_TRANSACTION',
+      action_type: 'transaction',
+      description: `Transaksi #${result.invoice_number} senilai Rp ${total.toLocaleString('id-ID')}`,
+      details: {
+        invoice_number: result.invoice_number,
+        total,
+        payment_method: effectivePaymentMethod,
+        item_count: cart.length,
+      },
+    });
 
     return {
       transaction: {

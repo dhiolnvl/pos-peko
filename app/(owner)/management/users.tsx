@@ -21,6 +21,7 @@ import { OwnerPageHeader } from "@/components/OwnerHeader";
 import { useBackFromDashboard } from "@/hooks/useBackFromDashboard";
 import { supabase, createUserAccount, getUsersInBranch } from "@/lib/supabase";
 import { fetchAllBranches } from "@/lib/ownerQueries";
+import { logActivity } from "@/lib/logService";
 import type { Branch } from "@/types";
 
 type Role = "owner" | "staff_pusat" | "back_office" | "cashier";
@@ -446,6 +447,12 @@ function UserForm({ user, branches, onClose, onSaved }: UserFormProps) {
           p_is_active: user!.is_active ?? true,
         });
         if (e) throw e;
+        logActivity({
+          action: 'UPDATE_USER',
+          action_type: 'management',
+          description: `Mengubah data user '${name.trim()}' (${ROLE_LABELS[role]})`,
+          details: { user_id: user!.id, name: name.trim(), role, branch_id: branchId },
+        });
       } else {
         await createUserAccount({
           email: email.trim(),
@@ -453,6 +460,12 @@ function UserForm({ user, branches, onClose, onSaved }: UserFormProps) {
           name: name.trim(),
           role: role as 'back_office' | 'cashier',
           branch_id: branchId,
+        });
+        logActivity({
+          action: 'CREATE_USER',
+          action_type: 'management',
+          description: `Menambahkan user baru '${name.trim()}' (${email.trim()})`,
+          details: { name: name.trim(), email: email.trim(), role, branch_id: branchId },
         });
       }
       onSaved();
@@ -1111,6 +1124,12 @@ export default function UsersManagement() {
                   u.id === user.id ? { ...u, is_active: !u.is_active } : u,
                 ),
               );
+              logActivity({
+                action: user.is_active ? 'DEACTIVATE_USER' : 'ACTIVATE_USER',
+                action_type: 'management',
+                description: `${user.is_active ? 'Menonaktifkan' : 'Mengaktifkan'} user '${user.name}' (${user.email})`,
+                details: { user_id: user.id, name: user.name, is_active: !user.is_active },
+              });
             } catch (e: any) {
               Alert.alert("Error", e.message ?? "Gagal mengubah status");
             }

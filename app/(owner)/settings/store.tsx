@@ -81,6 +81,14 @@ const ITEMS: SettingItem[] = [
     route: '/(owner)/settings/changelog',
   },
   {
+    label: 'Log Aktivitas',
+    subtitle: 'Riwayat & audit aktivitas pengguna',
+    icon: 'journal-outline',
+    iconBg: '#F3E8FF',
+    iconColor: '#9333EA',
+    route: '/(owner)/settings/logs',
+  },
+  {
     label: 'Reset Data',
     subtitle: 'Hapus data operasional, data master tetap',
     icon: 'refresh-circle-outline',

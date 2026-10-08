@@ -10,6 +10,7 @@ import {
 } from "@/lib/supabase";
 import { mmkv, StorageKeys } from "@/lib/mmkvStorage";
 import { offlineCache } from "@/lib/offlineCache";
+import { logActivity } from "@/lib/logService";
 
 // Key yang Supabase gunakan untuk menyimpan session di AsyncStorage
 const SUPABASE_SESSION_KEY = "sb-sxfegaptlzbdsjrtwxjb-auth-token";
@@ -334,6 +335,17 @@ export const useAuthStore = create<AuthState>((rawSet, get) => {
           isOfflineMode: false,
           isLoading: false,
         });
+
+        logActivity({
+          action: 'LOGIN',
+          action_type: 'auth',
+          description: `Masuk ke akun (${userProfile.email})`,
+          user_id: userProfile.id,
+          user_name: userProfile.name,
+          user_role: userProfile.role,
+          branch_id: currentBranch?.id,
+          branch_name: currentBranch?.name,
+        });
       } catch (error: any) {
         let errorMessage = "Gagal masuk";
         if (error.message?.includes("Invalid login credentials")) {
@@ -352,6 +364,20 @@ export const useAuthStore = create<AuthState>((rawSet, get) => {
 
     logout: async () => {
       try {
+        const currentUser = get().user;
+        const currentBranch = get().currentBranch;
+        if (currentUser) {
+          logActivity({
+            action: 'LOGOUT',
+            action_type: 'auth',
+            description: `Keluar dari akun (${currentUser.email})`,
+            user_id: currentUser.id,
+            user_name: currentUser.name,
+            user_role: currentUser.role,
+            branch_id: currentBranch?.id,
+            branch_name: currentBranch?.name,
+          });
+        }
         set({ isLoading: true, error: null });
         resetSessionStores();
         await supabase.auth.signOut();
@@ -381,6 +407,13 @@ export const useAuthStore = create<AuthState>((rawSet, get) => {
       if (user?.role !== "owner") return;
       await mmkv.setString(StorageKeys.CURRENT_BRANCH, branch.id);
       set({ currentBranch: branch });
+      logActivity({
+        action: 'SWITCH_BRANCH',
+        action_type: 'settings',
+        description: `Beralih ke cabang ${branch.name}`,
+        branch_id: branch.id,
+        branch_name: branch.name,
+      });
     },
 
     changePassword: async (newPassword: string) => {
@@ -391,6 +424,11 @@ export const useAuthStore = create<AuthState>((rawSet, get) => {
         });
         if (error) throw error;
         set({ isLoading: false });
+        logActivity({
+          action: 'CHANGE_PASSWORD',
+          action_type: 'auth',
+          description: 'Mengubah kata sandi akun',
+        });
       } catch (error: any) {
         set({
           error: error.message || "Gagal mengubah password",

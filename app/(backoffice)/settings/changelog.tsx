@@ -18,6 +18,13 @@ interface Release {
 
 const CHANGELOG: Release[] = [
   {
+    version: '1.13.0',
+    date: '8 Oktober 2026',
+    items: [
+      { type: 'new', text: 'Log Aktivitas: sistem pencatatan aktivitas terintegrasi untuk pemantauan produk, manajemen pengguna, transaksi, dan autentikasi' },
+    ],
+  },
+  {
     version: '1.12.0',
     date: '17 September 2026',
     items: [
@@ -167,7 +174,7 @@ export default function BackofficeChangelogScreen() {
         <TabletCenteredView>
           <View style={styles.content}>
             {CHANGELOG.map((release, ri) => (
-              <View key={release.version} style={styles.release}>
+              <View key={`${release.version}-${release.date}-${ri}`} style={styles.release}>
                 <View style={styles.releaseHeader}>
                   <View style={styles.versionBadge}>
                     <Text style={styles.versionText}>v{release.version}</Text>

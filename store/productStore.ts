@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from './authStore';
 import { offlineCache } from '@/lib/offlineCache';
+import { logActivity } from '@/lib/logService';
 import * as Network from 'expo-network';
 
 export interface Category {
@@ -495,6 +496,13 @@ export const useProductStore = create<ProductState>((set, get) => ({
     }
 
     await get().loadProducts({ reset: true });
+
+    logActivity({
+      action: 'CREATE_PRODUCT',
+      action_type: 'inventory',
+      description: `Menambahkan produk baru '${productData.name}' (Harga: Rp ${(productData.price || 0).toLocaleString('id-ID')})`,
+      details: { name: productData.name, price: productData.price, barcode: productData.barcode },
+    });
   },
 
   updateProduct: async (id, updates) => {
@@ -528,10 +536,22 @@ export const useProductStore = create<ProductState>((set, get) => ({
     }
 
     await get().loadProducts({ reset: true });
+
+    logActivity({
+      action: 'UPDATE_PRODUCT',
+      action_type: 'inventory',
+      description: `Mengubah data produk '${updates.name ?? 'produk'}'`,
+      details: { product_id: id, ...updates },
+    });
   },
 
   deactivateProduct: async (id) => {
     await get().updateProduct(id, { is_active: 0 });
+    logActivity({
+      action: 'DELETE_PRODUCT',
+      action_type: 'inventory',
+      description: `Menonaktifkan / menghapus produk (ID: ${id})`,
+    });
   },
 
   fetchProductUnits: async (productId) => {

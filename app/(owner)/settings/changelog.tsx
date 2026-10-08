@@ -18,6 +18,17 @@ interface Release {
 
 const CHANGELOG: Release[] = [
   {
+    version: '1.13.0',
+    date: '8 Oktober 2026',
+    items: [
+      { type: 'new', text: '[Owner] Log Aktivitas: menu baru di Profil → Pengaturan untuk memantau riwayat audit dan aktivitas sistem secara real-time' },
+      { type: 'new', text: '[Owner] Log Produk: pencatatan otomatis saat penambahan produk baru, perubahan data/harga, dan produk dinonaktifkan' },
+      { type: 'new', text: '[Owner] Log Manajemen User: pencatatan otomatis saat penambahan akun user baru, edit data pengguna, serta status akun dinonaktifkan/diaktifkan' },
+      { type: 'new', text: '[Owner] Log Autentikasi & Transaksi: pencatatan otomatis sesi login/logout pengguna dan transaksi penjualan kasir' },
+      { type: 'improve', text: '[Owner] Filter & Pencarian Log: kemudahan pelacakan riwayat aktivitas berdasarkan filter cabang, kategori aktivitas, serta pencarian kata kunci' },
+    ],
+  },
+  {
     version: '1.12.0',
     date: '17 September 2026',
     items: [
@@ -203,7 +214,7 @@ export default function ChangelogScreen() {
         <TabletCenteredView>
           <View style={styles.content}>
             {CHANGELOG.map((release, ri) => (
-              <View key={release.version} style={styles.release}>
+              <View key={`${release.version}-${release.date}-${ri}`} style={styles.release}>
                 <View style={styles.releaseHeader}>
                   <View style={styles.versionBadge}>
                     <Text style={styles.versionText}>v{release.version}</Text>
